@@ -1,0 +1,192 @@
+---
+title: "Konsep Dasar Deret Waktu dan Model Deret Waktu Stasioner"
+author: "Leonardo Valentino Kosasih"
+date: "2/19/2021"
+output: html_document
+---
+```{r Packages, echo=TRUE, message=FALSE, warning=FALSE}
+library(ggplot2)
+library(dplyr)
+library(dygraphs)
+library(xts)
+library(plotly)
+library(TSA)
+library(hrbrthemes)
+```
+
+# Random Walk 
+```{r Random Walk, echo=TRUE, message=FALSE, warning=FALSE}
+# Deklarasi Konstanta 
+NSim <- 200 #NSim banyaknya simulasi
+rataan <- 0 #besar rataan untuk error
+sig2 <- 0.5 #besar variansi untuk error
+ #inisialisasi peubah acak Yt
+data <- data.frame(
+  index = seq(1:NSim),
+  Yt_p = rep(0, NSim),
+  et_p = rep(0, NSim)
+)
+# Mengisi nilai Random Walk
+for (i in 1:(NSim-1)) {
+    et_p <- rnorm(1,rataan,sig2) 
+    data[i+1,2] <- data[i,1]+ et_p
+    data[i+1,3] <- et_p
+}
+p <- data %>%  ggplot( aes(x=index, y=Yt_p)) +
+    geom_line(color="#69b3a2") +
+    ylab("Nilai Y_t") +
+    theme_ipsum()
+p <- ggplotly(p)
+p
+```
+
+# Menghitung Kovariansi Manual
+```{r Covariansi Manual, echo=TRUE, message=FALSE, warning=FALSE}
+#Menghitung Kovariansi
+maxLag <- 16
+time <- seq(from = as.POSIXlt("2002-01-01"), to = as.POSIXct("2018-08-30"), by = "month")
+df <- data.frame(time, data) #membuat data frame baru, time+data awal
+
+#Data Frame Kovariansi
+cov <- data.frame(k = c(1:maxLag), 
+                  acf = NA, 
+                  stringsAsFactors = FALSE)
+
+for (k in 1: maxLag) {
+  N <- nrow(df) - k
+  matkov <- matrix(c(data[1:N,2], data[(1+k):(N+k),2]), nrow = N, ncol = 2,F)
+  ac = cov(matkov[,1], matkov[,2], use = "everything", method = "pearson")
+  cov[k,1] <- k
+  cov[k,2] <- ac
+}
+cov
+
+#Menghitung korelasi
+kor<-data.frame(k=c(1:maxLag),
+                korelasi=NA)
+for (k in 1:maxLag) {
+  kor[k,2]=cov[k,2]/var(data$Yt_p)
+}
+kor
+```
+# Simulasi Model AR dan MA
+```{r AR dan MA}
+ts.sim.ar<-arima.sim(list(order=c(1,0,0),ar
+=0.3),n=100)
+ts.plot(ts.sim.ar, main = 'Simulasi AR(1)')
+acf(ts.sim.ar,main='ACF Simulasi AR 1')
+pacf(ts.sim.ar,main='PACF Simulasi AR 1')
+
+ts.sim.ma<-arima.sim(list(order=c(0,0,1),ma
+=0.3),n=100)
+ts.plot(ts.sim.ma, main = 'Simulasi Plot MA(1)')
+acf(ts.sim.ma,main='')
+pacf(ts.sim.ma,main='')
+```
+
+```{r Simulasi model ARMA (2,0,3), message=FALSE, warning=FALSE}
+ts.sim.ar1<-arima.sim(list(order=c(2,0,3),
+                           ar=c(0.3,0.6),
+                           ma=c(0.2,0.3,0.4)),n=100)
+ts.plot(ts.sim.ar1)
+acf(ts.sim.ar1,main='')
+pacf(ts.sim.ar1,main='')
+```
+
+# Mesimulasikan Model dengan Parameter
+```{r Simulasi Model}
+Tn <- 45 #banyak datum
+phi <- 0.5 #parameter AR
+theta <-0.5 #parameter MA
+sig <- 7.2 #variansi error
+Y <-c(rep(0,Tn)) #bangun vector Y
+e <- rnorm(Tn,0,sig) #bangkitkan data error
+#AR(1)
+Y[2:Tn] <- (phi*Y[1:(Tn-1)])+e[2:Tn]
+#MA(1)
+Y[2:Tn] <- e[2:Tn]-(theta*e[1:(Tn-1)])
+#ARMA(1,1)
+Y[2:Tn] <- (phi*Y[1:(Tn-1)])+ e[2:Tn]-(theta*e[1:(Tn-1)])
+plot(Y)
+```
+# Mensimulasikan ACF
+```{r Simulasi ACF, message=FALSE, warning=FALSE}
+#ACF Manual
+maxLag<-12
+df<-data.frame(1:Tn,Y)
+acfResults<- data.frame(k=c(rep(1:maxLag)), 
+                       acf=NA, 
+                       stringsAsFactors = FALSE)
+for (k in 1: maxLag) {
+  N <-nrow(df)-k
+  acf<- sum((Y[1:N]-mean(Y))%*%(Y[(1+k):(N+k)]-mean(Y)))/sum((Y-mean(Y))^2)
+  acfResults[k,1] <-k
+  acfResults[k,2] <-acf
+}
+plot(acfResults[,2],
+    type="h",
+    ylim=c(-.4,.3),
+    xlab="lag",ylab="ACF"
+    ,main='Plot ACF Manual')
+abline(h=0)
+abline(h=c(1,-1)*1.96/sqrt(Tn),
+       lty=2,col="blue")
+
+#ACF Automatic
+acf(Y)
+acf(Y, plot=F)
+#Bandingkan Hasilnya
+
+Hasil<-data.frame(k=c(rep(1:maxLag)),acf_manual=NA, acf_R=NA, stringsAsFactors = FALSE)
+Hasil[,1] <-c(rep(1:maxLag))
+Hasil[,2] <-acf(Y,plot=F)
+Hasil[,3] <-acfResults[,2]
+```
+# Mensimulasikan PACF
+```{r Simulasi PACF, echo=TRUE, message=FALSE, warning=FALSE}
+#Perhitungan PACF Manual
+
+maxLag <- 12
+df <- data.frame(1:Tn,Y)
+PacfResults <- data.frame(k=c(1:maxLag),pacf=NA,stringsAsFactors = FALSE)
+rho = acfResults[,2]
+phi = matrix(0, nrow=maxLag,ncol=maxLag)
+phi[1,1]=rho[1]
+
+for (i in 2:maxLag){
+  phi[i,i]=(rho[i]-(sum(phi[i-1,1:i-1]*rho[(i-1):1])))/(1-sum(phi[i-1,1:i-1]*rho[1:i-1]))
+  for (j in 1:maxLag){
+    if (j<i){
+      phi[i,j]=phi[i-1,j]-(phi[i,i]*phi[i-1,i-j])
+    }
+    else {
+      0
+      }
+    }
+    PacfResults[,2] <-diag(phi)
+}
+plot(PacfResults[,2],
+      type="h",
+      ylim=c(-.3,.3),
+      xlab="lag", 
+      ylab="PACF", 
+      main='Plot PACF Manual')
+abline(h=0)
+abline(h=c(1,-1)*1.96/sqrt(length(phi)), 
+       lty=2,col="blue")
+
+#Perhitungan PACF dengan R
+pacf(Y)
+pacf(df, plot=FALSE)
+
+#Bandingkan Hasilnya
+
+Hasil<-data.frame(k=c(rep(1:maxLag)),
+                pacf_manual=NA, 
+                pacf_R=NA, 
+                stringsAsFactors = FALSE)
+
+Hasil[,1] <-c(rep(1:maxLag))
+Hasil[,2] <-pacf(Y,plot=F)
+Hasil[,3] <-PacfResults[,2]
+```
